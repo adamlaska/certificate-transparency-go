@@ -17,6 +17,9 @@ package ctfe
 import (
 	"context"
 	"crypto"
+	"crypto/ecdsa"
+	"crypto/ed25519"
+	"crypto/rsa"
 	"errors"
 	"fmt"
 	"net/http"
@@ -26,6 +29,8 @@ import (
 
 	"github.com/google/certificate-transparency-go/asn1"
 	"github.com/google/certificate-transparency-go/schedule"
+	"github.com/google/certificate-transparency-go/trillian/ctfe/cache"
+	"github.com/google/certificate-transparency-go/trillian/ctfe/storage"
 	"github.com/google/certificate-transparency-go/trillian/util"
 	"github.com/google/certificate-transparency-go/x509"
 	"github.com/google/certificate-transparency-go/x509util"
@@ -55,10 +60,10 @@ type InstanceOptions struct {
 	// given request. This string will be used as a User quota key.
 	// If unset, no quota will be requested for remote users.
 	RemoteQuotaUser func(*http.Request) string
-	// CertificateQuotaUser returns a string represeing the passed in
+	// CertificateQuotaUser returns a string representing the passed in
 	// intermediate certificate. This string will be user as a User quota key for
 	// the cert. Quota will be requested for each intermediate in an
-	// add-[pre]-chain request so as to allow individual issers to be rate
+	// add-[pre]-chain request so as to allow individual issuers to be rate
 	// limited. If unset, no quota will be requested for intermediate
 	// certificates.
 	CertificateQuotaUser func(*x509.Certificate) string
@@ -69,6 +74,10 @@ type InstanceOptions struct {
 	// MaskInternalErrors indicates if internal server errors should be masked
 	// or returned to the user containing the full error message.
 	MaskInternalErrors bool
+	// CacheType is the CTFE cache type.
+	CacheType cache.Type
+	// CacheOption includes the cache size and time-to-live (TTL).
+	CacheOption cache.Option
 }
 
 // Instance is a set up log/mirror instance. It must be created with the
@@ -90,6 +99,14 @@ func (i *Instance) RunUpdateSTH(ctx context.Context, period time.Duration) {
 			klog.Warningf("Failed to retrieve STH for %v (%d): %v", c.Prefix, c.LogId, err)
 		}
 	})
+}
+
+// GetPublicKey returns the public key from the instance's signer.
+func (i *Instance) GetPublicKey() crypto.PublicKey {
+	if i.li != nil && i.li.signer != nil {
+		return i.li.signer.Public()
+	}
+	return nil
 }
 
 // SetUpInstance sets up a log (or log mirror) instance using the provided
@@ -126,6 +143,26 @@ func setUpLogInfo(ctx context.Context, opts InstanceOptions) (*logInfo, error) {
 		if signer, err = keys.NewSigner(ctx, vCfg.PrivKey); err != nil {
 			return nil, fmt.Errorf("failed to load private key: %v", err)
 		}
+
+		// If a public key has been configured for a log, check that it is consistent with the private key.
+		if vCfg.PubKey != nil {
+			switch pub := vCfg.PubKey.(type) {
+			case *ecdsa.PublicKey:
+				if !pub.Equal(signer.Public()) {
+					return nil, errors.New("public key is not consistent with private key")
+				}
+			case ed25519.PublicKey:
+				if !pub.Equal(signer.Public()) {
+					return nil, errors.New("public key is not consistent with private key")
+				}
+			case *rsa.PublicKey:
+				if !pub.Equal(signer.Public()) {
+					return nil, errors.New("public key is not consistent with private key")
+				}
+			default:
+				return nil, errors.New("failed to verify consistency of public key with private key")
+			}
+		}
 	}
 
 	validationOpts := CertValidationOpts{
@@ -143,7 +180,24 @@ func setUpLogInfo(ctx context.Context, opts InstanceOptions) (*logInfo, error) {
 		return nil, fmt.Errorf("failed to parse RejectExtensions: %v", err)
 	}
 
-	logInfo := newLogInfo(opts, validationOpts, signer, new(util.SystemTimeSource))
+	// Initialise IssuanceChainService with IssuanceChainStorage and IssuanceChainCache.
+	issuanceChainStorage, err := storage.NewIssuanceChainStorage(ctx, vCfg.ExtraDataIssuanceChainStorageBackend, vCfg.CTFEStorageConnectionString)
+	if err != nil {
+		return nil, err
+	}
+	if issuanceChainStorage == nil {
+		return newLogInfo(opts, validationOpts, signer, new(util.SystemTimeSource), &directIssuanceChainService{}), nil
+	}
+
+	// We are storing chains outside of Trillian, so set up cache and service.
+	issuanceChainCache, err := cache.NewIssuanceChainCache(ctx, opts.CacheType, opts.CacheOption)
+	if err != nil {
+		return nil, err
+	}
+
+	issuanceChainService := newIndirectIssuanceChainService(issuanceChainStorage, issuanceChainCache)
+
+	logInfo := newLogInfo(opts, validationOpts, signer, new(util.SystemTimeSource), issuanceChainService)
 	return logInfo, nil
 }
 

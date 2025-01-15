@@ -24,7 +24,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"math/rand"
 	"net/http"
 	"os"
 	"strings"
@@ -32,7 +31,6 @@ import (
 	"time"
 
 	"github.com/google/certificate-transparency-go/client"
-	"github.com/google/certificate-transparency-go/fixchain/ratelimiter"
 	"github.com/google/certificate-transparency-go/jsonclient"
 	"github.com/google/certificate-transparency-go/loglist3"
 	"github.com/google/certificate-transparency-go/trillian/ctfe"
@@ -42,6 +40,7 @@ import (
 	"github.com/google/trillian/monitoring"
 	"github.com/google/trillian/monitoring/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"golang.org/x/time/rate"
 	"k8s.io/klog/v2"
 )
 
@@ -64,7 +63,6 @@ var (
 	parallelFetch   = flag.Int("parallel_fetch", 2, "Number of concurrent GetEntries fetches")
 
 	metricsEndpoint     = flag.String("metrics_endpoint", "", "Endpoint for serving metrics; if left empty, metrics will not be exposed")
-	seed                = flag.Int64("seed", -1, "Seed for random number generation")
 	logConfig           = flag.String("log_config", "", "File holding log config in JSON")
 	mmd                 = flag.Duration("mmd", 2*time.Minute, "Default MMD for logs")
 	operations          = flag.Uint64("operations", ^uint64(0), "Number of operations to perform")
@@ -91,11 +89,11 @@ var (
 	strictSTHConsistencySize = flag.Bool("strict_sth_consistency_size", true, "If set to true, hammer will use only tree sizes from STHs it's seen for consistency proofs, otherwise it'll choose a random size for the smaller tree")
 )
 
-func newLimiter(rate int) integration.Limiter {
-	if rate <= 0 {
+func newLimiter(limit int) integration.Limiter {
+	if limit <= 0 {
 		return nil
 	}
-	return ratelimiter.NewLimiter(rate)
+	return rate.NewLimiter(rate.Limit(limit), 1)
 }
 
 // copierGeneratorFactory returns a function that creates per-Log ChainGenerator instances
@@ -177,11 +175,6 @@ func main() {
 	if *logConfig == "" {
 		klog.Exit("Test aborted as no log config provided (via --log_config)")
 	}
-	if *seed == -1 {
-		*seed = time.Now().UTC().UnixNano() & 0xFFFFFFFF
-	}
-	fmt.Printf("Today's test has been brought to you by the letters C and T and the number %#x\n", *seed)
-	rand.Seed(*seed)
 
 	cfg, err := ctfe.LogConfigFromFile(*logConfig)
 	if err != nil {
@@ -260,8 +253,12 @@ func main() {
 		mcData, _ := base64.StdEncoding.DecodeString(mc)
 		b := bytes.NewReader(mcData)
 		r, _ := gzip.NewReader(b)
-		io.Copy(os.Stdout, r)
-		r.Close()
+		if _, err := io.Copy(os.Stdout, r); err != nil {
+			klog.Exitf("Failed to print banner!")
+		}
+		if err := r.Close(); err != nil {
+			klog.Exitf("Failed to close reader: %v", err)
+		}
 		fmt.Print("\n\nHammer Time\n\n")
 	}
 

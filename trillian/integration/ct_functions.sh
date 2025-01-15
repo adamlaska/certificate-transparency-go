@@ -82,10 +82,10 @@ ct_provision() {
 
   # Build config files with absolute paths
   CT_CFG=$(mktemp ${TMPDIR}/ct-XXXXXX)
-  sed "s!@TESTDATA@!${CT_GO_PATH}/trillian/testdata!" ${CT_GO_PATH}/trillian/integration/ct_integration_test.cfg > "${CT_CFG}"
+  sed "s!@TESTDATA@!${CT_GO_PATH}/trillian/testdata!" ${CT_GO_PATH}/trillian/integration${CONFIG_SUBDIR}/ct_integration_test.cfg > "${CT_CFG}"
 
   CT_LIFECYCLE_CFG=$(mktemp ${TMPDIR}/ct-XXXXXX)
-  sed "s!@TESTDATA@!${CT_GO_PATH}/trillian/testdata!" ${CT_GO_PATH}/trillian/integration/ct_lifecycle_test.cfg > "${CT_LIFECYCLE_CFG}"
+  sed "s!@TESTDATA@!${CT_GO_PATH}/trillian/testdata!" ${CT_GO_PATH}/trillian/integration${CONFIG_SUBDIR}/ct_lifecycle_test.cfg > "${CT_LIFECYCLE_CFG}"
 
   echo 'Building createtree'
   go build github.com/google/trillian/cmd/createtree/
@@ -100,7 +100,7 @@ ct_provision() {
 
   echo "CT Integration Configuration in ${CT_CFG}:"
   cat "${CT_CFG}"
-  echo "CT Lifeycle Configuration in ${CT_LIFECYCLE_CFG}:"
+  echo "CT Lifecycle Configuration in ${CT_LIFECYCLE_CFG}:"
   cat "${CT_LIFECYCLE_CFG}"
   echo
 }
