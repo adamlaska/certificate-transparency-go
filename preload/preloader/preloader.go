@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Binary preloader submits certificates that may not already be present in CT Logs.
 package main
 
 import (
@@ -137,7 +138,11 @@ func main() {
 		if err != nil {
 			klog.Exitf("Failed to create SCT file: %v", err)
 		}
-		defer sctFile.Close()
+		defer func() {
+			if err := sctFile.Close(); err != nil {
+				klog.Exitf("Failed to close SCT file: %v", err)
+			}
+		}()
 		sctFileWriter = sctFile
 	} else {
 		sctFileWriter = io.Discard
@@ -240,7 +245,9 @@ func main() {
 		}
 		precerts <- entry
 	}
-	s.Scan(ctx, addChainFunc, addPreChainFunc)
+	if err := s.Scan(ctx, addChainFunc, addPreChainFunc); err != nil {
+		klog.Errorf("Scan(): %v", err)
+	}
 
 	close(certs)
 	close(precerts)

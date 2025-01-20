@@ -17,6 +17,7 @@ package integration
 import (
 	"context"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"sync"
@@ -98,7 +99,9 @@ func NewCTLogEnv(ctx context.Context, cfgs []*configpb.LogConfig, numSequencers 
 			}
 		}
 		http.Handle("/metrics", promhttp.Handler())
-		server.Serve(listener)
+		if err := server.Serve(listener); err != http.ErrServerClosed {
+			klog.Fatalf("server.Serve(): %v", err)
+		}
 	}(logEnv, &server, listener, cfgs)
 	return &CTLogEnv{
 		logEnv:       logEnv,
@@ -111,7 +114,9 @@ func NewCTLogEnv(ctx context.Context, cfgs []*configpb.LogConfig, numSequencers 
 
 // Close shuts down the servers.
 func (env *CTLogEnv) Close() {
-	env.ctListener.Close()
+	if err := env.ctListener.Close(); err != nil {
+		log.Fatalf("Operation to close listener failed: %v", err)
+	}
 	env.wg.Wait()
 	env.logEnv.Close()
 }

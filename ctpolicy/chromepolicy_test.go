@@ -83,7 +83,6 @@ func wantedGroups(goog int, nonGoog int, base int, minusBob bool) LogPolicyData 
 	}
 	return gi
 }
-
 func TestCheckChromePolicy(t *testing.T) {
 	tests := []struct {
 		name string
@@ -114,7 +113,6 @@ func TestCheckChromePolicy(t *testing.T) {
 
 	var policy ChromeCTPolicy
 	sampleLogList := sampleLogList(t)
-
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			got, err := policy.LogsByGroup(test.cert, sampleLogList)

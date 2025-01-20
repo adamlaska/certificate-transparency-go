@@ -36,6 +36,7 @@ import (
 	"github.com/transparency-dev/merkle/rfc6962"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"k8s.io/klog/v2"
 )
 
 // Opts is the options passed to a witness.
@@ -118,8 +119,11 @@ func (w *Witness) GetLogs() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
+	defer func() {
+		if err := rows.Close(); err != nil {
+			klog.Errorf("Operation to close rows failed: %v", err)
+		}
+	}()
 	var logs []string
 	for rows.Next() {
 		var logID string
@@ -174,7 +178,11 @@ func (w *Witness) Update(ctx context.Context, logID string, nextRaw []byte, pf [
 	if err != nil {
 		return nil, fmt.Errorf("couldn't create db tx: %v", err)
 	}
-	defer tx.Rollback()
+	defer func() {
+		if err := tx.Rollback(); err != nil {
+			klog.Errorf("Rollback(): %v", err)
+		}
+	}()
 
 	// Get the latest STH (if one exists).
 	prevRaw, err := w.getLatestSTH(tx.QueryRow, logID)

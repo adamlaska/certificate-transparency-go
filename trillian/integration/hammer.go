@@ -100,12 +100,13 @@ const (
 // Limiter is an interface to allow different rate limiters to be used with the
 // hammer.
 type Limiter interface {
-	Wait()
+	Wait(context.Context) error
 }
 
 type unLimited struct{}
 
-func (u unLimited) Wait() {
+func (u unLimited) Wait(ctx context.Context) error {
+	return nil
 }
 
 // HammerConfig provides configuration for a stress/load test.
@@ -132,7 +133,7 @@ type HammerConfig struct {
 	// Rate limiter
 	Limiter Limiter
 	// MaxParallelChains sets the upper limit for the number of parallel
-	// add-*-chain requests to make when the biasing model says to perfom an add.
+	// add-*-chain requests to make when the biasing model says to perform an add.
 	MaxParallelChains int
 	// EmitInterval defines how frequently stats are logged.
 	EmitInterval time.Duration
@@ -975,7 +976,9 @@ func (s *hammerState) String() string {
 }
 
 func (s *hammerState) performOp(ctx context.Context, ep ctfe.EntrypointName) (int, error) {
-	s.cfg.Limiter.Wait()
+	if err := s.cfg.Limiter.Wait(ctx); err != nil {
+		return http.StatusRequestTimeout, fmt.Errorf("Limiter.Wait(): %v", err)
+	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1013,7 +1016,9 @@ func (s *hammerState) performOp(ctx context.Context, ep ctfe.EntrypointName) (in
 }
 
 func (s *hammerState) performInvalidOp(ctx context.Context, ep ctfe.EntrypointName) error {
-	s.cfg.Limiter.Wait()
+	if err := s.cfg.Limiter.Wait(ctx); err != nil {
+		return fmt.Errorf("Limiter.Wait(): %v", err)
+	}
 	switch ep {
 	case ctfe.AddChainName:
 		return s.addChainInvalid(ctx)

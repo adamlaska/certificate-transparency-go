@@ -48,11 +48,15 @@ func TestNoLLRefresherAfterRun(t *testing.T) {
 }
 
 func TestFirstRefresh(t *testing.T) {
-	f, err := createTempFile(testdata.SampleLogList)
+	f, err := createTempFile(testdata.SampleLogList3)
 	if err != nil {
-		t.Fatalf("createTempFile(%q) = (_, %q), want (_, nil)", testdata.SampleLogList, err)
+		t.Fatalf("createTempFile(%q) = (_, %q), want (_, nil)", testdata.SampleLogList3, err)
 	}
-	defer os.Remove(f)
+	defer func() {
+		if err := os.Remove(f); err != nil {
+			t.Fatalf("Operation to remove temp file failed: %v", err)
+		}
+	}()
 
 	llr := NewLogListRefresher(f)
 	llm := NewLogListManager(llr, nil)
@@ -71,11 +75,15 @@ func TestFirstRefresh(t *testing.T) {
 }
 
 func TestSecondRefresh(t *testing.T) {
-	f, err := createTempFile(testdata.SampleLogList)
+	f, err := createTempFile(testdata.SampleLogList3)
 	if err != nil {
-		t.Fatalf("createTempFile(%q) = (_, %q), want (_, nil)", testdata.SampleLogList, err)
+		t.Fatalf("createTempFile(%q) = (_, %q), want (_, nil)", testdata.SampleLogList3, err)
 	}
-	defer os.Remove(f)
+	defer func() {
+		if err := os.Remove(f); err != nil {
+			t.Fatalf("Operation to remove temp file failed: %v", err)
+		}
+	}()
 
 	llr := NewLogListRefresher(f)
 	llm := NewLogListManager(llr, monitoring.InertMetricFactory{})
@@ -105,7 +113,7 @@ First:
 		}
 	}
 
-	sampleLogListUpdate := strings.Replace(testdata.SampleLogList, "ct.googleapis.com/racketeer/", "ct.googleapis.com/racketeer/v2/", 1)
+	sampleLogListUpdate := strings.Replace(testdata.SampleLogList3, "ct.googleapis.com/racketeer/", "ct.googleapis.com/racketeer/v2/", 1)
 	if err := os.WriteFile(f, []byte(sampleLogListUpdate), 0644); err != nil {
 		t.Fatalf("unable to update Log-list data file: %q", err)
 	}
